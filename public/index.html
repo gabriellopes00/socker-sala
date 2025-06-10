@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat com Salas</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .room-section {
+        margin-bottom: 20px;
+        padding: 15px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        background-color: #f9f9f9;
+      }
+      .chat-section {
+        margin-top: 20px;
+      }
+      #messages {
+        height: 300px;
+        overflow-y: auto;
+        border: 1px solid #ccc;
+        padding: 10px;
+        margin-bottom: 10px;
+        background-color: white;
+      }
+      #messages li {
+        margin-bottom: 5px;
+        list-style: none;
+      }
+      .system-message {
+        color: #666;
+        font-style: italic;
+      }
+      .error-message {
+        color: red;
+        font-weight: bold;
+      }
+      input,
+      select,
+      textarea,
+      button {
+        margin: 5px;
+        padding: 8px;
+      }
+      button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+      #currentRoom {
+        font-weight: bold;
+        color: #007bff;
+      }
+      .form-group {
+        margin-bottom: 10px;
+      }
+      label {
+        display: inline-block;
+        width: 100px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Chat com Salas</h1>
+
+    <div class="room-section">
+      <h3>Configurações da Sala</h3>
+
+      <div class="form-group">
+        <label for="username">Nickname:</label>
+        <input
+          type="text"
+          id="username"
+          autocomplete="off"
+          placeholder="Digite seu nickname"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="roomSelect">Sala:</label>
+        <select id="roomSelect">
+          <option value="">Selecione uma sala...</option>
+          <option value="sala-geral">Sala Geral</option>
+          <option value="sala-tecnologia">Sala Tecnologia</option>
+          <option value="sala-jogos">Sala Jogos</option>
+          <option value="sala-musica">Sala Música</option>
+        </select>
+      </div>
+
+      <button id="joinRoomBtn">Entrar na Sala</button>
+
+      <div style="margin-top: 10px">
+        <strong>Sala atual: </strong><span id="currentRoom">Nenhuma</span>
+      </div>
+    </div>
+
+    <div class="chat-section">
+      <h3>Chat</h3>
+      <ul id="messages"></ul>
+
+      <form id="form" action="">
+        <textarea
+          id="input"
+          autocomplete="off"
+          rows="3"
+          cols="70"
+          placeholder="Digite sua mensagem..."
+          disabled
+        ></textarea
+        ><br />
+        <button type="submit" id="sendBtn" disabled>Enviar</button>
+      </form>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+
+    <script>
+      var socket = io();
+      var currentRoom = null;
+      var currentUsername = null;
+
+      const usernameInput = document.getElementById("username");
+      const roomSelect = document.getElementById("roomSelect");
+      const joinRoomBtn = document.getElementById("joinRoomBtn");
+      const currentRoomSpan = document.getElementById("currentRoom");
+      const messageInput = document.getElementById("input");
+      const sendBtn = document.getElementById("sendBtn");
+      const form = document.getElementById("form");
+
+      joinRoomBtn.addEventListener("click", function () {
+        const username = usernameInput.value.trim();
+        const selectedRoom = roomSelect.value;
+
+        if (!username) {
+          alert("Por favor, digite um nickname!");
+          return;
+        }
+
+        if (!selectedRoom) {
+          alert("Por favor, selecione uma sala!");
+          return;
+        }
+
+        socket.emit("join-room", { room: selectedRoom, username });
+        currentUsername = username;
+      });
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+
+        if (!currentRoom) {
+          alert("Você precisa entrar em uma sala primeiro!");
+          return;
+        }
+
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        const currentTime = new Date().toLocaleTimeString();
+
+        socket.emit("chat-message", {
+          user: currentUsername,
+          message,
+          time: currentTime,
+        });
+
+        messageInput.value = "";
+      });
+
+      messageInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          form.dispatchEvent(new Event("submit"));
+        }
+      });
+
+      socket.on("room-joined", function (data) {
+        currentRoom = data.room;
+        currentRoomSpan.textContent = data.room;
+
+        messageInput.disabled = false;
+        sendBtn.disabled = false;
+        messageInput.placeholder = "Digite sua mensagem...";
+
+        document.getElementById("messages").innerHTML = "";
+
+        addMessage(data.message, "system-message");
+        messageInput.focus();
+      });
+
+      socket.on("chat-message", function (data) {
+        addMessage(
+          "<b>[" + data.time + "] " + data.user + ":</b> " + data.message
+        );
+      });
+
+      socket.on("user-joined", function (data) {
+        addMessage("[" + data.time + "] " + data.message, "system-message");
+      });
+
+      socket.on("user left", function (data) {
+        addMessage("[" + data.time + "] " + data.message, "system-message");
+      });
+
+      socket.on("chat-history", function ({ room, messages }) {
+        messages.forEach(function (msg) {
+          addMessage(
+            "<b>[" + msg.time + "] " + msg.user + ":</b> " + msg.message
+          );
+        });
+      });
+
+      socket.on("error-message", function (data) {
+        addMessage(
+          "[" + data.time + "] ERRO: " + data.message,
+          "error-message"
+        );
+      });
+
+      function addMessage(message, className = "") {
+        var li = document.createElement("li");
+        li.innerHTML = message;
+        if (className) {
+          li.className = className;
+        }
+
+        const messagesContainer = document.getElementById("messages");
+        messagesContainer.appendChild(li);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+
+      socket.on("disconnect", function () {
+        messageInput.disabled = true;
+        sendBtn.disabled = true;
+        currentRoom = null;
+        currentRoomSpan.textContent = "Desconectado";
+        addMessage("Conexão perdida. Recarregue a página.", "error-message");
+      });
+    </script>
+  </body>
+</html>
